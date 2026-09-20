@@ -45,6 +45,8 @@ from ui_smoke_common import (
     text_node,
     wait_for_run_terminal,
 )
+from urllib.parse import quote
+from block_test_packages import install_test_package, release_key, surface_payload
 
 from blocs.claude_code.block import ClaudeCodeBlock
 
@@ -146,6 +148,11 @@ def claude_code_node(*, two_outputs: bool = False, max_prompt_chars: int = 25000
 def run_claude_code_case(runtime_mode: str) -> None:
     with fake_claude_cli(response_text=f"fake claude {runtime_mode}") as capture_path:
         with isolated_server() as server:
+            # Les surfaces sont des assets de release : le bundled kind n'en sert aucun.
+            model = install_test_package(server, "claude_code")
+            key = quote(release_key(model), safe="")
+            served = lambda payload, suffix: next(
+                asset["path"] for asset in payload["assets"] if asset["path"].endswith(suffix))
             document = graph_payload(
                 f"F5 Claude Code {runtime_mode}",
                 [
@@ -234,10 +241,8 @@ def test_claude_code_ui_contract() -> None:
     expect('data-block-output-field="instruction"' in html, "L'instruction doit rester liee a output.instruction.")
     expect('data-block-config-field="claude_binary"' in html, "Le binaire Claude doit etre editable.")
     expect('data-block-config-field="timeout_sec"' in html, "Le timeout doit etre editable.")
-    expect({"kind": "css", "path": "assets/css/block_modal.css"} in assets, "Le CSS modal Claude doit etre declare.")
-    expect({"kind": "js", "path": "assets/js/block_modal.js"} in assets, "Le JS modal Claude doit etre declare.")
     expect(".claude-modal-panel[hidden]" in css, "Le CSS doit cacher les panels inactifs.")
-    expect("registry.claude_code" in js, "Le JS doit monter le modal via le registre block UI.")
+    expect("export function mount" in js, "Le JS doit monter le modal via le registre block UI.")
 
     inspector = render_block_inspector_panel("claude_code", {"node": node})
     inspector_html = str(inspector.get("html") or "")

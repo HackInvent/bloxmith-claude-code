@@ -1,15 +1,15 @@
-.cw-claude-code-modal {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(1480px, calc(100vw - 32px));
 }
 
-.cw-claude-code-modal .modal-header,
-.cw-claude-code-modal .claude-modal-footer {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .modal-header,
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-footer {
   padding-inline: 24px;
 }
 
-.cw-claude-code-modal .claude-modal-body {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-body {
   display: grid;
   grid-template-columns: 250px minmax(0, 1fr);
   min-height: min(80vh, 880px);
@@ -17,7 +17,7 @@
   background: #f7f9fd;
 }
 
-.cw-claude-code-modal .claude-modal-tablist {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-tablist {
   display: grid;
   align-content: start;
   gap: 8px;
@@ -29,7 +29,7 @@
   background: #ffffff;
 }
 
-.cw-claude-code-modal .claude-modal-tab {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-tab {
   display: grid;
   gap: 4px;
   width: 100%;
@@ -44,125 +44,125 @@
   cursor: pointer;
 }
 
-.cw-claude-code-modal .claude-modal-tab span,
-.cw-claude-code-modal .claude-modal-tab small {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-tab span,
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-tab small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.cw-claude-code-modal .claude-modal-tab span {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-tab span {
   color: var(--ink);
   font-size: 0.92rem;
   font-weight: 800;
 }
 
-.cw-claude-code-modal .claude-modal-tab small {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-tab small {
   font-size: 0.76rem;
 }
 
-.cw-claude-code-modal .claude-modal-tab[aria-selected="true"] {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-tab[aria-selected="true"] {
   border-color: rgba(106, 90, 249, 0.5);
   background: #f5f3ff;
   color: var(--accent-strong);
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
-.cw-claude-code-modal .claude-modal-tab:focus-visible {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-tab:focus-visible {
   outline: none;
   border-color: rgba(106, 90, 249, 0.75);
   box-shadow: 0 0 0 4px rgba(106, 90, 249, 0.12);
 }
 
-.cw-claude-code-modal .claude-modal-panels,
-.cw-claude-code-modal .claude-modal-panel {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-panels,
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-panel {
   min-width: 0;
   min-height: 0;
 }
 
-.cw-claude-code-modal .claude-modal-panels {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-panels {
   overflow: hidden;
 }
 
-.cw-claude-code-modal .claude-modal-panel {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-panel {
   height: 100%;
   overflow: auto;
   padding: 22px 24px;
 }
 
-.cw-claude-code-modal .claude-modal-panel[hidden] {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-panel[hidden] {
   display: none;
 }
 
-.cw-claude-code-modal .claude-attributes-grid {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-attributes-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
   align-items: start;
 }
 
-.cw-claude-code-modal .claude-modal-section,
-.cw-claude-code-modal .claude-output-editor,
-.cw-claude-code-modal .claude-reference-panel,
-.cw-claude-code-modal .claude-last-command-layout {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-section,
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-output-editor,
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-reference-panel,
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-last-command-layout {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: #ffffff;
 }
 
-.cw-claude-code-modal .claude-modal-section {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-section {
   padding: 16px;
 }
 
-.cw-claude-code-modal .claude-config-grid {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-config-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
-.cw-claude-code-modal .claude-output-layout {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-output-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(250px, 320px);
   gap: 18px;
   min-height: 100%;
 }
 
-.cw-claude-code-modal .claude-output-editor {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-output-editor {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: min(72vh, 800px);
   padding: 18px;
 }
 
-.cw-claude-code-modal .claude-output-header {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-output-header {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
 }
 
-.cw-claude-code-modal .claude-output-header h3 {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-output-header h3 {
   margin: 4px 0 2px;
   font-size: 1.15rem;
 }
 
-.cw-claude-code-modal .claude-output-header p,
-.cw-claude-code-modal .claude-last-command-header p,
-.cw-claude-code-modal .claude-last-command-empty {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-output-header p,
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-last-command-header p,
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-last-command-empty {
   margin: 0;
   color: var(--muted);
   font-size: 0.86rem;
 }
 
-.cw-claude-code-modal .claude-instruction-field {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-instruction-field {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   margin-bottom: 0;
 }
 
-.cw-claude-code-modal .claude-instruction-field textarea {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-instruction-field textarea {
   min-height: min(64vh, 700px);
   resize: vertical;
   font-family: var(--mono);
@@ -170,19 +170,19 @@
   line-height: 1.58;
 }
 
-.cw-claude-code-modal .claude-reference-panel {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-reference-panel {
   align-self: start;
   padding: 16px;
   position: sticky;
   top: 0;
 }
 
-.cw-claude-code-modal .claude-reference-list {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-reference-list {
   display: grid;
   gap: 10px;
 }
 
-.cw-claude-code-modal .claude-reference-row {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-reference-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
@@ -193,15 +193,15 @@
   background: #fbfcff;
 }
 
-.cw-claude-code-modal .claude-reference-row code {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-reference-row code {
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.cw-claude-code-modal .claude-reference-row strong,
-.cw-claude-code-modal .claude-reference-row small {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-reference-row strong,
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-reference-row small {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -209,21 +209,21 @@
   white-space: nowrap;
 }
 
-.cw-claude-code-modal .claude-last-command-layout {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-last-command-layout {
   display: grid;
   gap: 16px;
   min-height: min(72vh, 800px);
   padding: 18px;
 }
 
-.cw-claude-code-modal .claude-last-command-header {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-last-command-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.cw-claude-code-modal .claude-last-command-output {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-last-command-output {
   min-height: min(60vh, 660px);
   max-height: min(60vh, 660px);
   margin: 0;
@@ -240,7 +240,7 @@
   padding: 14px;
 }
 
-.cw-claude-code-modal .claude-modal-footer {
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -251,39 +251,39 @@
 }
 
 @media (max-width: 1180px) {
-  .cw-claude-code-modal .claude-attributes-grid,
-  .cw-claude-code-modal .claude-config-grid,
-  .cw-claude-code-modal .claude-output-layout {
+  [data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-attributes-grid,
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-config-grid,
+[data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-output-layout {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .cw-claude-code-modal .claude-reference-panel {
+  [data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-reference-panel {
     position: static;
   }
 }
 
 @media (max-width: 860px) {
-  .cw-claude-code-modal {
+  [data-block-release="claude_code@0.1.0"] .cw-claude-code-modal {
     width: min(100%, calc(100vw - 16px));
   }
 
-  .cw-claude-code-modal .claude-modal-body {
+  [data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-body {
     grid-template-columns: minmax(0, 1fr);
     overflow: auto;
   }
 
-  .cw-claude-code-modal .claude-modal-tablist {
+  [data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-tablist {
     display: flex;
     overflow-x: auto;
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
 
-  .cw-claude-code-modal .claude-modal-tab {
+  [data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-tab {
     min-width: 180px;
   }
 
-  .cw-claude-code-modal .claude-modal-panel {
+  [data-block-release="claude_code@0.1.0"] .cw-claude-code-modal .claude-modal-panel {
     overflow: visible;
     padding: 16px;
   }
