@@ -148,7 +148,7 @@ def claude_code_node(*, two_outputs: bool = False, max_prompt_chars: int = 25000
 def run_claude_code_case(runtime_mode: str) -> None:
     with fake_claude_cli(response_text=f"fake claude {runtime_mode}") as capture_path:
         with isolated_server() as server:
-            # Les surfaces sont des assets de release : le bundled kind n'en sert aucun.
+            # Surfaces are release assets: a bundled kind serves none of them.
             model = install_test_package(server, "claude_code")
             key = quote(release_key(model), safe="")
             served = lambda payload, suffix: next(
@@ -169,12 +169,12 @@ def run_claude_code_case(runtime_mode: str) -> None:
             run = wait_for_run_terminal(server, str(created.get("run_id") or ""), timeout_sec=20)
 
         calls = [json.loads(line) for line in capture_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-        expect(run.get("status") == "success", f"Le run Claude Code {runtime_mode} doit reussir.")
+        expect(run.get("status") == "success", f"The Claude Code {runtime_mode} run must succeed.")
         expect(run.get("output_values", {}).get("claude-code-1:1", {}).get("value").strip() == f"fake claude {runtime_mode}", "stdout Claude Code incorrect.")
-        expect(calls and calls[-1].get("argv", [None])[0] == "-p", "Claude Code doit etre appele avec -p.")
+        expect(calls and calls[-1].get("argv", [None])[0] == "-p", "Claude Code must be called with -p.")
         prompt = str(calls[-1].get("prompt") or "")
-        expect("hello claude" in prompt, "Le prompt Claude Code doit contenir l'input texte.")
-        expect("Return a concise answer" in prompt, "Le prompt Claude Code doit contenir l'instruction.")
+        expect("hello claude" in prompt, "The Claude Code prompt must contain the 'input texte.")
+        expect("Return a concise answer" in prompt, "The Claude Code prompt must contain the 'instruction.")
         logs = "\n".join(run.get("node_logs", {}).get("claude-code-1", []))
         expect("[claude-code-cmd]" in logs and " -p " in logs, "Les logs doivent exposer la commande Claude Code avec -p.")
 
@@ -196,11 +196,11 @@ def test_multiple_outputs_and_prompt_guard() -> None:
             run = wait_for_run_terminal(server, str(created.get("run_id") or ""), timeout_sec=20)
 
         calls = [json.loads(line) for line in capture_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-        expect(run.get("status") == "success", "Le run multi-output Claude Code doit reussir.")
-        expect(len(calls) == 2, "Claude Code doit etre appele une fois par sortie.")
-        expect(run.get("output_values", {}).get("claude-code-1:2", {}).get("value").strip() == "multi", "La sortie 2 doit publier stdout.")
+        expect(run.get("status") == "success", "The multi-output Claude Code run must succeed.")
+        expect(len(calls) == 2, "Claude Code must be called once per output.")
+        expect(run.get("output_values", {}).get("claude-code-1:2", {}).get("value").strip() == "multi", "Output 2 must publish stdout.")
         result = run.get("results", {}).get("claude-code-1", {})
-        expect("last_claude_command" in str(result), "La metadata doit conserver la derniere commande Claude Code.")
+        expect("last_claude_command" in str(result), "The metadata must keep the last Claude Code command.")
 
     block = ClaudeCodeBlock()
     result = block.execute_runtime(
@@ -219,8 +219,8 @@ def test_multiple_outputs_and_prompt_guard() -> None:
             run_dir=ROOT,
         )
     )
-    expect(result.status == "failed", "Un prompt trop long doit etre refuse avant execution.")
-    expect("trop long" in result.error, "Le message d'erreur doit expliquer la limite de prompt.")
+    expect(result.status == "failed", "A prompt that is too long must be refused before execution.")
+    expect("trop long" in result.error, "The error message must explain the prompt limit.")
 
 
 def test_claude_code_ui_contract() -> None:
@@ -235,18 +235,18 @@ def test_claude_code_ui_contract() -> None:
 
     expect("cw-claude-code-modal" in html, "Le modal Claude Code doit venir du bloc.")
     expect('data-block-runtime-refresh="autonomous"' in html, "Le modal Claude Code doit gerer son refresh runtime.")
-    expect('data-claude-tab-id="output-1"' in html, "Le modal doit exposer l'onglet instruction de sortie.")
+    expect('data-claude-tab-id="output-1"' in html, "The modal must expose the output instruction tab.")
     expect('data-claude-tab-id="attributes"' in html, "Le modal doit exposer l'onglet Attributs.")
     expect('data-claude-tab-id="last-cmd"' in html, "Le modal doit exposer l'onglet Last cmd.")
     expect('data-block-output-field="instruction"' in html, "L'instruction doit rester liee a output.instruction.")
-    expect('data-block-config-field="claude_binary"' in html, "Le binaire Claude doit etre editable.")
-    expect('data-block-config-field="timeout_sec"' in html, "Le timeout doit etre editable.")
+    expect('data-block-config-field="claude_binary"' in html, "The Claude binary must be editable.")
+    expect('data-block-config-field="timeout_sec"' in html, "Le timeout must be editable.")
     expect(".claude-modal-panel[hidden]" in css, "Le CSS doit cacher les panels inactifs.")
     expect("export function mount" in js, "Le JS doit monter le modal via le registre block UI.")
 
     inspector = render_block_inspector_panel("claude_code", {"node": node})
     inspector_html = str(inspector.get("html") or "")
-    expect("cw-claude-code-inspector" in inspector_html, "L'inspector Claude Code doit venir du bloc.")
+    expect("cw-claude-code-inspector" in inspector_html, "L'Claude Code inspector must come from the block.")
     expect('data-block-output-field="instruction"' in inspector_html, "L'inspector doit editer l'instruction.")
 
     card = render_block_node_card("claude_code", {"node": node})
