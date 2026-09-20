@@ -176,7 +176,7 @@ def run_claude_code_case(runtime_mode: str) -> None:
         expect("hello claude" in prompt, "The Claude Code prompt must contain the 'input texte.")
         expect("Return a concise answer" in prompt, "The Claude Code prompt must contain the 'instruction.")
         logs = "\n".join(run.get("node_logs", {}).get("claude-code-1", []))
-        expect("[claude-code-cmd]" in logs and " -p " in logs, "Les logs doivent exposer la commande Claude Code avec -p.")
+        expect("[claude-code-cmd]" in logs and " -p " in logs, "The logs must expose the Claude Code command with -p.")
 
 
 def test_multiple_outputs_and_prompt_guard() -> None:
@@ -233,16 +233,16 @@ def test_claude_code_ui_contract() -> None:
     css = (ROOT / "blocs/claude_code/assets/css/block_modal.css").read_text(encoding="utf-8")
     js = (ROOT / "blocs/claude_code/assets/js/block_modal.js").read_text(encoding="utf-8")
 
-    expect("cw-claude-code-modal" in html, "Le modal Claude Code doit venir du bloc.")
-    expect('data-block-runtime-refresh="autonomous"' in html, "Le modal Claude Code doit gerer son refresh runtime.")
+    expect("cw-claude-code-modal" in html, "The Claude Code modal must come from the block.")
+    expect('data-block-runtime-refresh="autonomous"' in html, "The Claude Code modal must own its runtime refresh.")
     expect('data-claude-tab-id="output-1"' in html, "The modal must expose the output instruction tab.")
-    expect('data-claude-tab-id="attributes"' in html, "Le modal doit exposer l'onglet Attributs.")
-    expect('data-claude-tab-id="last-cmd"' in html, "Le modal doit exposer l'onglet Last cmd.")
+    expect('data-claude-tab-id="attributes"' in html, "The modal must expose the Attributs tab.")
+    expect('data-claude-tab-id="last-cmd"' in html, "The modal must expose the Last cmd tab.")
     expect('data-block-output-field="instruction"' in html, "L'instruction doit rester liee a output.instruction.")
     expect('data-block-config-field="claude_binary"' in html, "The Claude binary must be editable.")
     expect('data-block-config-field="timeout_sec"' in html, "Le timeout must be editable.")
-    expect(".claude-modal-panel[hidden]" in css, "Le CSS doit cacher les panels inactifs.")
-    expect("export function mount" in js, "Le JS doit monter le modal via le registre block UI.")
+    expect(".claude-modal-panel[hidden]" in css, "The CSS must hide the inactive panels.")
+    expect("export function mount" in js, "The JS must mount the modal through the block UI registry.")
 
     inspector = render_block_inspector_panel("claude_code", {"node": node})
     inspector_html = str(inspector.get("html") or "")
@@ -251,7 +251,7 @@ def test_claude_code_ui_contract() -> None:
 
     card = render_block_node_card("claude_code", {"node": node})
     card_html = str(card.get("html") or "")
-    expect("data-claude-code-node-card" in card_html, "La node-card Claude Code doit venir du bloc.")
+    expect("data-claude-code-node-card" in card_html, "The Claude Code node card must come from the block.")
 
 
 def main() -> None:
