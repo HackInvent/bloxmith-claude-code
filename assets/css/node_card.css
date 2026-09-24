@@ -1,0 +1,81 @@
+/* The package owns the body only: shell size, status and ports stay framework-owned. */
+[data-block-release="claude_code@0.1.0"] .claude-code-node-card {
+  display: grid;
+  grid-template-rows: 20px 20px 36px 16px;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+[data-block-release="claude_code@0.1.0"] .claude-card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding-right: 26px;
+  box-sizing: border-box;
+}
+
+[data-block-release="claude_code@0.1.0"] .claude-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  height: 20px;
+  border-radius: 6px;
+  background: #f7e8e0;
+  color: #87412c;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+[data-block-release="claude_code@0.1.0"] .claude-card-kind {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #526079;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+[data-block-release="claude_code@0.1.0"] .claude-code-node-card .block-node-card-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #26314d;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+
+[data-block-release="claude_code@0.1.0"] .claude-code-node-card .block-node-card-main {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: #637089;
+  font-size: 14px;
+  line-height: 18px;
+  text-align: center;
+}
+
+[data-block-release="claude_code@0.1.0"] .claude-code-node-card .block-node-card-meta {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #637089;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}

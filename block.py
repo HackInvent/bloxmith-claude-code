@@ -1,690 +1,246 @@
-# -----------------------------------------------------------------------------
-# Role: Implements the Claude Code block runtime and UI contract.
-# File Name: block.py
-# Author: Alexandre EL
-# Email: alex@hackinvent.com
-# Created Date: 2026-05-19
-# -----------------------------------------------------------------------------
-
-from __future__ import annotations
+"""Autonomous Claude Code block: public runtime, UI bindings and release assets."""
 
 from html import escape
-from typing import Any
-import re
-import shlex
-import subprocess
-import time
+import json
 
 from bloxsmith_app.block_api import (
-    BlockDefinition,
-    BlockRuntimeContext,
-    BlockRuntimeOutput,
-    BlockRuntimeResult,
-    render_inspector_template,
-    render_node_card_template,
-    TEXT_PLAIN,
+    BlockDefinition, render_inspector_template, render_node_card_template,
+    render_path_browser_control,
 )
+from .runtime import (execute, initialize, normalize_config, boolean, PERMISSIONS,
+                      is_working_directory_port, directory_input_enabled)
 
-
-DEFAULT_CLAUDE_BINARY = "claude"
-DEFAULT_TIMEOUT_SEC = 300
-DEFAULT_MAX_PROMPT_CHARS = 250_000
-MAX_TIMEOUT_SEC = 7200
-MAX_PROMPT_CHARS = 1_000_000
-
-
-# Functional behavior:
-# FB1 - Build one Claude Code prompt from current inputs and the target output instruction.
-# FB2 - Execute Claude Code through the local CLI with `-p` and emit stdout on the target output.
-# FB3 - Run once per user output, so added output ports can own separate instructions.
-# FB4 - Refuse oversized prompts before launching the local Claude Code process.
-# FB5 - Capture command, stderr, exit code, duration, and timeout state in runtime metadata and logs.
-# FB6 - Work through the generic block executor in both centralized and zeromq_active runtimes.
 
 class ClaudeCodeBlock(BlockDefinition):
-    """Autonomous block implementation for `ClaudeCodeBlock`."""
+    """One Claude CLI call per output, with optional instance-scoped continuation."""
+
     kind = "claude_code"
 
-    def render_node_card(self, *, node: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Render the Claude Code canvas card from the block-owned template."""
+    def initialize_runtime(self, context):
+        """Restore the session identifier before any business input arrives."""
+        return initialize(context, self.model)
 
-        config = self._ui_config(node)
-        return render_node_card_template(
-            block=self,
-            node=node,
-            node_classes=["claude-code-node"],
-            replacements={
-                "title": node.get("title") or self.default_title(),
-                "instruction": self._truncate(config["instruction"] or "Instruction vide", 62),
-                "binary": config["claude_binary"],
-                "timeout": f"{config['timeout_sec']}s",
-            },
-        )
+    def execute_runtime(self, context):
+        """Use the identical generic adapter in centralized and active runtimes."""
+        return execute(context, self.model)
 
-    def render_modal(self, *, node: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Render the Claude Code modal with instruction, attributes, and last command tabs."""
+    def normalize_config(self, config):
+        """Expose strict block-owned configuration validation for tooling/tests."""
+        return normalize_config(config, self.model)
 
-        payload = payload or {}
-        title = str(node.get("title") or self.default_title())
-        config = self._ui_config(node)
-        template = (self.directory / "block_modal.html").read_text(encoding="utf-8")
-        replacements = {
-            "node_id": escape(str(node.get("id") or ""), quote=True),
-            "node_title": escape(title),
-            "node_kind": escape(self.kind, quote=True),
-            "node_kind_title": escape(str(self.model.get("title") or self.default_title())),
-            "modal_tabs_html": self._render_modal_tabs(node, title, config, payload),
-        }
-        html = template
-        for key, value in replacements.items():
-            html = html.replace(f"{{{{ {key} }}}}", str(value))
-        return {"html": html, "context": {"node_id": str(node.get("id") or ""), "node_kind": self.kind}}
+    def text(self, key, fallback):
+        """Mark static UI text for block-owned English/French localization."""
+        full = f"block.claude_code.{key}"
+        return f'<span data-i18n="{full}">{escape(self.translate(full, fallback=fallback))}</span>'
 
-    def render_inspector_panel(self, *, node: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Render the Claude Code inspector with generic field bindings."""
+    def field(self, config, key, title, *, kind="text", attrs="", options=None):
+        """Render accessible generic config bindings, including inline checkboxes."""
+        value = config.get(key, "")
+        label = self.text(key, title)
+        binding = f'data-block-config-field="{key}"'
+        if kind == "checkbox":
+            return f'<label class="claude-check"><input type="checkbox" {binding}{" checked" if boolean(value) else ""}>{label}</label>'
+        if options is not None:
+            control = f'<select {binding}>' + "".join(
+                f'<option value="{escape(str(k), quote=True)}"{" selected" if str(k) == str(value) else ""}>{escape(str(v))}</option>'
+                for k, v in options) + '</select>'
+        else:
+            numeric = 'data-block-value-type="integer"' if kind == "number" else ""
+            control = f'<input type="{kind}" {binding} {numeric} {attrs} value="{escape(str(value), quote=True)}">'
+        return f'<label class="field-group">{label}{control}</label>'
 
-        config = self._ui_config(node)
-        template = (self.directory / "inspector_panel.html").read_text(encoding="utf-8")
-        html = render_inspector_template(
-            template=(
-                template
-                .replace("{{ instruction }}", escape(config["instruction"]))
-                .replace("{{ instruction_output_id }}", str(config["instruction_output_id"]))
-                .replace("{{ claude_binary }}", escape(config["claude_binary"], quote=True))
-                .replace("{{ timeout_sec }}", str(config["timeout_sec"]))
-                .replace("{{ max_prompt_chars }}", str(config["max_prompt_chars"]))
-            ),
-            node={**node, "type": self.kind, "kind": self.kind},
-            payload=payload,
-        )
-        return {"html": html, "context": {"node_id": str(node.get("id") or ""), "full_panel": True}}
+    def _config(self, node):
+        """Keep even invalid authored values editable; validation happens at Apply/Run."""
+        config = {**self.default_config(), **(node.get("config") or {})}
+        config["working_directory_input_enabled"] = directory_input_enabled(config, node.get("inputs") or [])
+        return config
 
-    def execute_runtime(self, context: BlockRuntimeContext) -> BlockRuntimeResult:
-        """Execute Claude Code for each target output in the current runtime context."""
-
-        config = self.normalize_config(context.config)
-        outputs: list[BlockRuntimeOutput] = []
-        logs: list[str] = []
-        last_message = ""
-        failed_records: list[dict[str, Any]] = []
-        records: list[dict[str, Any]] = []
-
-        for output_port in context.output_ports:
-            record = self._execute_output_prompt(context, output_port=output_port, config=config)
-            records.append(record)
-            port_id = int(record["port_id"])
-            port_name = str(record.get("port_name") or "")
-            stdout = str(record.get("stdout") or "")
-            stderr = str(record.get("stderr") or "")
-            exit_code = int(record.get("exit_code") or 0)
-            command = str(record.get("command") or "")
-            logs.append(f"[claude-code-cmd] {context.node_id}.{port_name or port_id}: {command}")
-            logs.append(f"[claude-code-exit] {context.node_id}.{port_name or port_id}: exit_code={exit_code}")
-            logs.extend(f"[claude-code-stderr] {line}" for line in stderr.splitlines())
-            outputs.append(
-                BlockRuntimeOutput(
-                    port_id=port_id,
-                    port_name=port_name,
-                    value=stdout,
-                    content_type=TEXT_PLAIN,
-                    status="success" if exit_code == 0 else "failed",
-                    exit_code=exit_code,
-                    metadata={
-                        "stderr": stderr,
-                        "duration": record.get("duration"),
-                        "last_claude_command": command,
-                        "prompt_chars": record.get("prompt_chars"),
-                    },
-                )
-            )
-            if stdout:
-                last_message = stdout
-            if exit_code != 0:
-                failed_records.append(record)
-
-        if failed_records:
-            first = failed_records[0]
-            error = str(first.get("stderr") or first.get("error") or "Claude Code execution failed.").strip()
-            logs.append(f"[claude-code-error] {context.node_id}: {error or 'execution failed.'}")
-            return BlockRuntimeResult(
-                status="failed",
-                outputs=outputs,
-                logs=logs,
-                error=error,
-                exit_code=int(first.get("exit_code") or 1),
-                last_message=error or last_message,
-                worker_received=error or last_message or "-",
-                metadata=self._runtime_metadata(config, records),
-            )
-
-        logs.append(f"[done] Claude Code {context.node_id}: {len(outputs)} output(s) emis.")
-        return BlockRuntimeResult(
-            status="success",
-            outputs=outputs,
-            logs=logs,
-            last_message=last_message,
-            content_type=TEXT_PLAIN,
-            worker_received=last_message or "-",
-            metadata=self._runtime_metadata(config, records),
-        )
-
-    def normalize_config(self, config: dict[str, Any] | None) -> dict[str, Any]:
-        """Return safe Claude Code runtime configuration from raw node config."""
-
-        raw = config if isinstance(config, dict) else {}
-        return {
-            "claude_binary": str(raw.get("claude_binary") or DEFAULT_CLAUDE_BINARY).strip()
-            or DEFAULT_CLAUDE_BINARY,
-            "timeout_sec": self._normalize_int(
-                raw.get("timeout_sec"),
-                default=DEFAULT_TIMEOUT_SEC,
-                minimum=1,
-                maximum=MAX_TIMEOUT_SEC,
-            ),
-            "max_prompt_chars": self._normalize_int(
-                raw.get("max_prompt_chars"),
-                default=DEFAULT_MAX_PROMPT_CHARS,
-                minimum=1,
-                maximum=MAX_PROMPT_CHARS,
-            ),
-        }
-
-    def _execute_output_prompt(
-        self,
-        context: BlockRuntimeContext,
-        *,
-        output_port: Any,
-        config: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Build and send one prompt to `claude -p` for the requested output port."""
-
-        started = time.perf_counter()
-        port_id = int(getattr(output_port, "id", 0) or 0)
-        port_name = str(getattr(output_port, "name", "") or "")
-        instruction = str(getattr(output_port, "instruction", "") or "").strip()
-        prompt = self._build_prompt(context, instruction=instruction)
-        command = self._format_command(config["claude_binary"], prompt)
-        if not prompt.strip():
-            return self._error_record(
-                port_id=port_id,
-                port_name=port_name,
-                command=command,
-                stderr="Prompt Claude Code vide.",
-                exit_code=2,
-                started=started,
-                prompt=prompt,
-            )
-        if len(prompt) > int(config["max_prompt_chars"]):
-            return self._error_record(
-                port_id=port_id,
-                port_name=port_name,
-                command=command,
-                stderr=(
-                    "Prompt Claude Code trop long: "
-                    f"{len(prompt)} caracteres > limite {config['max_prompt_chars']}."
-                ),
-                exit_code=2,
-                started=started,
-                prompt=prompt,
-            )
-
-        try:
-            completed = subprocess.run(
-                [config["claude_binary"], "-p", prompt],
-                cwd=str(context.root_dir),
-                text=True,
-                capture_output=True,
-                timeout=int(config["timeout_sec"]),
-                check=False,
-            )
-        except subprocess.TimeoutExpired as exc:
-            return self._error_record(
-                port_id=port_id,
-                port_name=port_name,
-                command=command,
-                stderr=self._decode_process_text(exc.stderr)
-                or f"Timeout Claude Code apres {config['timeout_sec']}s.",
-                stdout=self._decode_process_text(exc.stdout),
-                exit_code=-1,
-                started=started,
-                prompt=prompt,
-            )
-        except OSError as exc:
-            return self._error_record(
-                port_id=port_id,
-                port_name=port_name,
-                command=command,
-                stderr=f"Execution Claude Code impossible: {exc}",
-                exit_code=1,
-                started=started,
-                prompt=prompt,
-            )
-
-        return {
-            "port_id": port_id,
-            "port_name": port_name,
-            "command": command,
-            "stdout": completed.stdout or "",
-            "stderr": completed.stderr or "",
-            "exit_code": int(completed.returncode),
-            "duration": round(time.perf_counter() - started, 3),
-            "prompt_chars": len(prompt),
-        }
-
-    def _build_prompt(self, context: BlockRuntimeContext, *, instruction: str) -> str:
-        """Compose a bounded prompt from named inputs and the output instruction."""
-
-        input_sections: list[str] = []
-        seen: set[str] = set()
-        for input_port in context.input_ports:
-            port_id = str(getattr(input_port, "id", "") or "")
-            port_name = str(getattr(input_port, "name", "") or "").strip() or port_id
-            if port_name in seen:
-                continue
-            seen.add(port_name)
-            value = str(context.input_value(port_name, port_id) or "")
-            if not value:
-                continue
-            input_sections.append(
-                "\n".join(
-                    [
-                        f"[BEGIN INPUT {port_name}]",
-                        value,
-                        f"[END INPUT {port_name}]",
-                    ]
-                )
-            )
-
-        parts: list[str] = []
-        if input_sections:
-            parts.append("Voici les donnees recues.\n\n" + "\n\n".join(input_sections))
-        if instruction.strip():
-            parts.append("Instruction:\n\n" + instruction.strip())
-        return "\n\n".join(parts).strip()
-
-    def _runtime_metadata(self, config: dict[str, Any], records: list[dict[str, Any]]) -> dict[str, Any]:
-        """Return execution metadata persisted with the runtime result."""
-
-        last_command = ""
-        for record in reversed(records):
-            command = str(record.get("command") or "")
-            if command:
-                last_command = command
-                break
-        return {
-            "claude_binary": config["claude_binary"],
-            "timeout_sec": config["timeout_sec"],
-            "max_prompt_chars": config["max_prompt_chars"],
-            "last_claude_command": last_command,
-        }
-
-    def _ui_config(self, node: dict[str, Any]) -> dict[str, Any]:
-        """Return normalized values used by the inspector, modal, and node card."""
-
-        raw_config = node.get("config") if isinstance(node.get("config"), dict) else {}
-        config = self.normalize_config(raw_config)
-        outputs = node.get("outputs") if isinstance(node.get("outputs"), list) else []
-        first_output = next((port for port in outputs if isinstance(port, dict)), {})
-        return {
-            **config,
-            "instruction": str(first_output.get("instruction") or ""),
-            "instruction_output_id": int(first_output.get("id") or 1),
-        }
-
-    def _render_modal_tabs(
-        self,
-        node: dict[str, Any],
-        title: str,
-        config: dict[str, Any],
-        payload: dict[str, Any],
-    ) -> str:
-        """Render the tabbed Claude Code modal content."""
-
-        outputs = [port for port in node.get("outputs", []) if isinstance(port, dict)]
-        node_dom_id = self._safe_dom_id(str(node.get("id") or "claude-code"))
-        selected_tab_id = f"output-{self._dict_port_id(outputs[0], 1)}" if outputs else "attributes"
-        tabs: list[str] = [
-            self._render_tab(
-                tab_id="attributes",
-                tab_dom_id=f"claude-{node_dom_id}-tab-attributes",
-                panel_dom_id=f"claude-{node_dom_id}-panel-attributes",
-                title="Attributs",
-                subtitle="Configuration et ports",
-                selected=selected_tab_id == "attributes",
-            )
-        ]
-        panels: list[str] = [
-            self._render_attributes_panel(
-                node_dom_id=node_dom_id,
-                selected=selected_tab_id == "attributes",
-                title=title,
-                config=config,
-                node=node,
-                payload=payload,
-            )
-        ]
-
-        for index, port in enumerate(outputs):
-            port_id = self._dict_port_id(port, index + 1)
-            tab_id_value = f"output-{port_id}"
-            tab_dom_id = f"claude-{node_dom_id}-tab-{self._safe_dom_id(str(port_id))}"
-            panel_dom_id = f"claude-{node_dom_id}-panel-{self._safe_dom_id(str(port_id))}"
-            raw_name = str(port.get("name") or f"out{port_id}")
-            port_title = str(port.get("title") or raw_name or f"Output {port_id}")
-            instruction = str(port.get("instruction") or "")
-            selected = selected_tab_id == tab_id_value
-            tabs.append(
-                self._render_tab(
-                    tab_id=tab_id_value,
-                    tab_dom_id=tab_dom_id,
-                    panel_dom_id=panel_dom_id,
-                    title=port_title,
-                    subtitle=f"#{port_id} - {raw_name}",
-                    selected=selected,
-                )
-            )
-            panels.append(
-                '<section class="claude-modal-panel claude-output-panel" data-claude-modal-panel '
-                f'data-claude-tab-id="{escape(tab_id_value, quote=True)}" id="{escape(panel_dom_id, quote=True)}" '
-                f'role="tabpanel" aria-labelledby="{escape(tab_dom_id, quote=True)}"{"" if selected else " hidden"}>'
-                '<div class="claude-output-layout">'
-                '<div class="claude-output-editor">'
-                '<div class="claude-output-header">'
-                '<div>'
-                '<span class="group-label">Prompt Claude Code</span>'
-                f'<h3>{escape(port_title)}</h3>'
-                f'<p>Commande executee: <code>{escape(config["claude_binary"])} -p</code></p>'
-                '</div>'
-                '</div>'
-                '<div class="field-group claude-instruction-field">'
-                '<label>Instruction</label>'
-                '<textarea data-claude-modal-instruction data-block-output-field="instruction" '
-                f'data-block-output-port-id="{escape(str(port_id), quote=True)}" rows="24" spellcheck="false" '
-                'placeholder="Describe what Claude Code must produce from the received inputs.">'
-                f'{escape(instruction)}'
-                '</textarea>'
-                '</div>'
-                '</div>'
-                '<aside class="claude-reference-panel">'
-                '<div class="ports-editor-header"><span class="group-label">Inputs disponibles</span></div>'
-                '<p class="field-hint">Inputs are included in the prompt automatically.</p>'
-                f'{self._render_input_references(node)}'
-                '</aside>'
-                '</div>'
-                '</section>'
-            )
-
-        tabs.append(
-            self._render_tab(
-                tab_id="last-cmd",
-                tab_dom_id=f"claude-{node_dom_id}-tab-last-cmd",
-                panel_dom_id=f"claude-{node_dom_id}-panel-last-cmd",
-                title="Last cmd",
-                subtitle="Commande Claude",
-                selected=False,
-            )
-        )
-        panels.append(
-            self._render_last_command_panel(
-                panel_dom_id=f"claude-{node_dom_id}-panel-last-cmd",
-                tab_dom_id=f"claude-{node_dom_id}-tab-last-cmd",
-                selected=False,
-                command=self._ui_last_command(payload),
-            )
-        )
-
+    def _configuration_html(self, node, payload):
+        """Group common tasks first, with permissions and limits in Advanced."""
+        config = self._config(node)
+        picker = render_path_browser_control(
+            input_id="claude-working-directory", label="Working directory", value=config["working_directory"],
+            placeholder="Select a directory or use the input", select_mode="directory",
+            label_key="block.claude_code.working_directory", placeholder_key="block.claude_code.directory_placeholder",
+            input_attrs='data-block-config-field="working_directory"')
+        model_options = [(item["id"], item["label"]) for item in self.model["model_catalog"]]
+        if config["model"] not in {item[0] for item in model_options}:
+            model_options.append((config["model"], config["model"]))
+        choices = ''.join(f'<option value="{escape(str(k), quote=True)}">{escape(str(v))}</option>' for k, v in model_options)
+        result = (payload.get("runtime") or {}).get("result") or {}
+        meta = result.get("metadata") or {}
+        state = result.get("runtime_state") or {}
+        identifier = str(state.get("claude_session_id", result.get("claude_session_id", meta.get("claude_session_id", ""))) or "")
         return (
-            '<div class="claude-modal-body" data-claude-modal-tabs>'
-            '<nav class="claude-modal-tablist" role="tablist" aria-label="Configuration Claude Code">'
-            + "".join(tabs)
-            + '</nav>'
-            + '<div class="claude-modal-panels">'
-            + "".join(panels)
-            + '</div>'
-            + '</div>'
-        )
-
-    def _render_attributes_panel(
-        self,
-        *,
-        node_dom_id: str,
-        selected: bool,
-        title: str,
-        config: dict[str, Any],
-        node: dict[str, Any],
-        payload: dict[str, Any],
-    ) -> str:
-        """Render identity, runtime config, ports, and latest runtime state."""
-
-        panel_id = f"claude-{node_dom_id}-panel-attributes"
-        tab_id = f"claude-{node_dom_id}-tab-attributes"
-        return (
-            '<section class="claude-modal-panel claude-attributes-panel" data-claude-modal-panel '
-            f'data-claude-tab-id="attributes" id="{escape(panel_id, quote=True)}" role="tabpanel" '
-            f'aria-labelledby="{escape(tab_id, quote=True)}"{"" if selected else " hidden"}>'
-            '<div class="claude-attributes-grid">'
-            '<section class="claude-modal-section">'
-            '<div class="ports-editor-header"><span class="group-label">Identite</span></div>'
-            f'{self._render_title_field(title)}'
-            '</section>'
-            '<section class="claude-modal-section">'
-            '<div class="ports-editor-header"><span class="group-label">Configuration</span></div>'
-            f'{self._render_config_fields(config)}'
-            '</section>'
-            '<section class="claude-modal-section">'
-            '<div class="ports-editor-header"><span class="group-label">Ports</span></div>'
-            f'{self._render_generic_modal_ports(node)}'
-            '</section>'
-            '<section class="claude-modal-section">'
-            '<div class="ports-editor-header"><span class="group-label">Dernier etat</span></div>'
-            f'{self._render_generic_modal_runtime(payload)}'
-            '</section>'
-            '</div>'
-            '</section>'
-        )
-
-    def _render_config_fields(self, config: dict[str, Any]) -> str:
-        """Render editable Claude CLI settings."""
-
-        return (
+            '<div class="claude-settings-stack"><section class="claude-modal-section">'
+            f'<h3>{self.text("execution", "Execution")}</h3>'
+            f'<label class="field-group">{self.text("title", "Block name")}<input data-block-title-field value="{escape(str(node.get("title") or self.default_title()), quote=True)}"></label>'
+            f'{picker}<label class="claude-check"><input type="checkbox" data-claude-working-directory-input-enabled{" checked" if config["working_directory_input_enabled"] else ""}>'
+            f'{self.text("working_directory_input_enabled", "Use an input for the working directory")}</label>'
+            f'<p class="field-hint">{self.text("directory_hint", "This switch applies immediately. Turning it off removes the input and its links. A non-empty input overrides the configured directory.")}</p>'
+            '<p class="field-hint" data-claude-directory-feedback role="status" aria-live="polite" hidden></p>'
             '<div class="claude-config-grid">'
-            '<div class="field-group">'
-            '<label>Binaire Claude</label>'
-            f'<input data-block-config-field="claude_binary" type="text" autocomplete="off" '
-            f'spellcheck="false" value="{escape(config["claude_binary"], quote=True)}" />'
-            '</div>'
-            '<div class="field-group">'
-            '<label>Timeout secondes</label>'
-            f'<input data-block-config-field="timeout_sec" data-block-value-type="integer" type="number" '
-            f'min="1" max="{MAX_TIMEOUT_SEC}" step="1" value="{config["timeout_sec"]}" />'
-            '</div>'
-            '<div class="field-group">'
-            '<label>Limite prompt</label>'
-            f'<input data-block-config-field="max_prompt_chars" data-block-value-type="integer" type="number" '
-            f'min="1" max="{MAX_PROMPT_CHARS}" step="1000" value="{config["max_prompt_chars"]}" />'
-            '</div>'
-            '</div>'
-            '<p class="field-hint">Le runtime lance toujours <code>claude -p &lt;prompt&gt;</code>.</p>'
+            f'<label class="field-group">{self.text("model", "Model")}<input data-block-config-field="model" list="claude-models" placeholder="CLI default" data-i18n-placeholder="block.claude_code.cli_default" value="{escape(str(config["model"]), quote=True)}"><datalist id="claude-models">{choices}</datalist></label>'
+            f'{self.field(config, "effort", "Effort", options=[(e, e or "CLI default") for e in self.model["effort_catalog"]])}</div>'
+            f'<p class="field-hint">{self.text("model_hint", "Choose an alias or enter an exact model ID. Access and effort support depend on your Claude account.")}</p>'
+            '</section><section class="claude-modal-section">'
+            f'<h3>{self.text("session", "Session")}</h3>'
+            f'{self.field(config, "use_persistent_session", "Use a persistent Claude session", kind="checkbox")}'
+            f'<p class="field-hint">{self.text("session_hint", "One session per block and blueprint instance. All outputs share it sequentially. Disabling persistence forgets the association at the next execution, not the Claude transcript.")}</p>'
+            f'<div class="claude-session-row"><code data-claude-session-id>{escape(identifier)}</code>'
+            f'<span data-claude-session-empty{" hidden" if identifier else ""}>{self.text("session_empty", "Available after the first successful execution")}</span>'
+            f'<button type="button" class="ghost-btn" data-claude-copy-session{" disabled" if not identifier else ""}>{self.text("copy", "Copy")}</button></div>'
+            f'<input type="hidden" data-block-config-field="session_generation" value="{escape(str(config["session_generation"]), quote=True)}">'
+            f'<button type="button" class="ghost-btn" data-claude-reset-session>{self.text("reset_session", "New session on next execution")}</button>'
+            '<p class="field-hint" data-claude-session-feedback role="status"></p>'
+            '</section><details class="claude-modal-section"><summary>'
+            f'{self.text("advanced", "Permissions and limits")}</summary><div class="claude-advanced">'
+            f'{self.field(config, "permission_mode", "Permission mode", options=[(p, p) for p in PERMISSIONS])}'
+            f'{self.field(config, "dangerously_allow_all", "Danger: bypass all permission checks", kind="checkbox")}'
+            f'<p class="claude-warning">{self.text("permissions_hint", "Claude can read or modify the working directory according to these permissions. This unattended block cannot show approval dialogs. The danger option grants unrestricted tool execution.")}</p>'
+            f'{self.field(config, "claude_binary", "Claude executable")}'
+            '<div class="claude-config-grid">'
+            f'{self.field(config, "timeout_sec", "Timeout per call (s)", kind="number", attrs="min=1 max=240 step=1")}'
+            f'{self.field(config, "max_prompt_chars", "Prompt limit (characters)", kind="number", attrs="min=1 max=1000000 step=1000")}</div>'
+            f'<p class="field-hint">{self.text("limits_hint", "240 seconds maximum for the whole activation. Authentication uses the local Claude CLI; no API key is stored in this block.")}</p>'
+            '</div></details></div>'
         )
 
-    def _render_title_field(self, title: str) -> str:
-        """Render the editable title field without duplicating the modal Apply button."""
+    def _instructions_html(self, node):
+        """Per-output editors and explicit data-input overrides keyed by stable ID."""
+        config = self._config(node)
+        mapping = config.get("instruction_inputs") or {}
+        panels = []
+        for port in node.get("outputs", []):
+            pid = str(port["id"])
+            source = str(mapping.get(pid, ""))
+            options = f'<option value="">{escape(self.translate("block.claude_code.fixed_instruction", fallback="Use the instruction below"))}</option>'
+            inputs = [p for p in node.get("inputs", []) if not is_working_directory_port(p)]
+            for p in inputs:
+                options += f'<option value="{p["id"]}"{" selected" if str(p["id"]) == source else ""}>{escape(str(p.get("name") or p["id"]))} (#{p["id"]})</option>'
+            if source and source not in {str(p["id"]) for p in inputs}:
+                options += f'<option value="{escape(source, quote=True)}" selected>#{escape(source)} — unavailable</option>'
+            panels.append(
+                f'<section class="claude-modal-section claude-output-editor"><h3>{escape(str(port.get("title") or port.get("name") or pid))}</h3>'
+                f'<label class="field-group">{self.text("instruction_source", "Instruction source")}<select data-claude-instruction-source="{pid}">{options}</select></label>'
+                f'<label class="field-group">{self.text("instruction", "Instruction")}<textarea rows="14" spellcheck="false" data-block-output-field="instruction" data-block-output-port-id="{pid}">{escape(str(port.get("instruction") or ""))}</textarea></label>'
+                f'<p class="field-hint">{self.text("instruction_hint", "A non-empty selected input replaces this instruction. Other inputs are included as named data. Port order does not change the mapping.")}</p></section>')
+        return f'<input type="hidden" data-block-config-field="instruction_inputs" data-block-value-type="json" value="{escape(json.dumps(mapping), quote=True)}">' + ''.join(panels)
 
-        return (
-            '<div class="field-group">'
-            '<label>Block name</label>'
-            f'<input data-block-title-field type="text" autocomplete="off" value="{escape(title, quote=True)}" />'
-            '</div>'
-        )
+    def _mcp_html(self, node, payload):
+        """Show server-owned summaries only; never expose connection parameters."""
+        selected = self._config(node).get("mcp_refs") or []
+        servers = [v for v in (payload.get("mcp_server_refs") or []) if isinstance(v, dict)]
+        known = {str(v.get("ref")) for v in servers}
+        servers += [{"ref": ref, "name": ref} for ref in selected if ref not in known]
+        rows = []
+        for item in servers:
+            ref = str(item.get("ref") or "")
+            if ref:
+                status = self.text("mcp_ready", "Configured") if item.get("configured") else self.text("mcp_missing", "Missing or incomplete configuration")
+                rows.append(f'<label class="claude-mcp-option"><input type="checkbox" data-claude-mcp-ref value="{escape(ref, quote=True)}"{" checked" if ref in selected else ""}><span><strong>{escape(str(item.get("name") or ref))}</strong><small>{escape(ref)} · {status}</small></span></label>')
+        if payload.get("mcp_server_refs_error"):
+            rows.append(f'<p role="alert">{self.text("mcp_error", "MCP registry unavailable. Saved selections are preserved.")}</p>')
+        if not rows:
+            rows.append(f'<p>{self.text("mcp_empty", "No MCP server configured. Add one in Application Settings.")}</p>')
+        return (f'<section class="claude-modal-section"><h3>{self.text("mcp", "MCP servers")}</h3>'
+                f'<input type="hidden" data-block-config-field="mcp_refs" data-block-value-type="json" value="{escape(json.dumps(selected), quote=True)}">'
+                + ''.join(rows) + f'<p class="field-hint">{self.text("mcp_hint", "Only selected application references are used. URLs, headers and credentials are resolved at execution and are never stored in the blueprint.")}</p></section>')
 
-    def _render_input_references(self, node: dict[str, Any]) -> str:
-        """Render input names that will be included in the Claude prompt."""
+    def render_modal(self, *, node, payload=None):
+        """Render an opaque, responsive modal with pinned actions and owned tabs."""
+        payload = payload or {}
+        result = (payload.get("runtime") or {}).get("result") or {}
+        command = str(result.get("last_claude_command") or (result.get("metadata") or {}).get("last_claude_command") or "")
+        panels = [("attributes", "settings", "Settings", self._configuration_html(node, payload)),
+                  ("instructions", "instructions", "Instructions", self._instructions_html(node)),
+                  ("mcp", "mcp", "MCP servers", self._mcp_html(node, payload)),
+                  ("ports", "ports", "Ports", self._render_generic_modal_ports(node)),
+                  ("last-cmd", "diagnostics", "Diagnostics", f'<section class="claude-modal-section"><h3>{self.text("last_command", "Last command")}</h3><pre data-claude-last-command>{escape(command)}</pre><p class="field-hint">{self.text("command_hint", "The prompt and MCP connection parameters are intentionally omitted.")}</p></section>')]
+        tabs, body = [], []
+        for index, (key, text_key, title, content) in enumerate(panels):
+            selected = index == 0
+            tabs.append(f'<button type="button" class="claude-modal-tab" data-claude-modal-tab data-claude-tab-id="{key}" id="claude-tab-{key}" role="tab" aria-controls="claude-panel-{key}" aria-selected="{str(selected).lower()}" tabindex="{0 if selected else -1}">{self.text(text_key, title)}</button>')
+            body.append(f'<section class="claude-modal-panel" data-claude-modal-panel data-claude-tab-id="{key}" id="claude-panel-{key}" role="tabpanel" aria-labelledby="claude-tab-{key}"{"" if selected else " hidden"}>{content}</section>')
+        template = (self.directory / "block_modal.html").read_text(encoding="utf-8")
+        for key, value in {"node_id": escape(str(node.get("id") or ""), quote=True),
+                           "node_title": escape(str(node.get("title") or self.default_title())),
+                           "tabs": ''.join(tabs), "panels": ''.join(body)}.items():
+            template = template.replace("{{ " + key + " }}", value)
+        return {"html": template, "context": {"node_id": node.get("id"), "node_kind": self.kind}}
 
-        inputs = node.get("inputs") if isinstance(node.get("inputs"), list) else []
-        if not inputs:
-            return '<div class="ports-editor-empty">No input available.</div>'
-        rows: list[str] = []
-        for index, port in enumerate(inputs):
-            if not isinstance(port, dict):
-                continue
-            port_id = self._dict_port_id(port, index + 1)
-            raw_name = str(port.get("name") or "").strip()
-            title = str(port.get("title") or raw_name or f"Input {port_id}").strip()
-            rows.append(
-                '<div class="claude-reference-row">'
-                f'<code>@{escape(raw_name or str(port_id))}</code>'
-                '<div>'
-                f'<strong>{escape(title)}</strong>'
-                f'<small>#{escape(str(port_id))} - {escape(raw_name or str(port_id))}</small>'
-                '</div>'
-                '</div>'
-            )
-        return '<div class="claude-reference-list">' + "".join(rows) + '</div>'
+    def render_inspector_panel(self, *, node, payload=None):
+        """Reuse the same settings and instructions with the standard ports editor."""
+        template = (self.directory / "inspector_panel.html").read_text(encoding="utf-8")
+        template = template.replace("{{ settings }}", self._configuration_html(node, payload or {}))
+        template = template.replace("{{ instructions }}", self._instructions_html(node))
+        template = template.replace("{{ mcp }}", self._mcp_html(node, payload or {}))
+        return {"html": render_inspector_template(template=template, node=node, payload=payload),
+                "context": {"node_id": node.get("id"), "full_panel": True}}
 
-    def _render_last_command_panel(
-        self,
-        *,
-        panel_dom_id: str,
-        tab_dom_id: str,
-        selected: bool,
-        command: str,
-    ) -> str:
-        """Render the read-only panel containing the latest Claude command."""
-
-        command_source_id = f"{escape(panel_dom_id, quote=True)}-source"
-        empty_class = " hidden" if command else ""
-        command_class = "" if command else " hidden"
-        return (
-            '<section class="claude-modal-panel claude-last-command-panel" data-claude-modal-panel '
-            f'data-claude-tab-id="last-cmd" id="{escape(panel_dom_id, quote=True)}" role="tabpanel" '
-            f'aria-labelledby="{escape(tab_dom_id, quote=True)}"{"" if selected else " hidden"}>'
-            '<div class="claude-last-command-layout">'
-            '<div class="claude-last-command-header">'
-            '<div>'
-            '<span class="group-label">Last command</span>'
-            '<h3>Last cmd</h3>'
-            '<p>Claude Code command prepared by the runtime for the last execution.</p>'
-            '</div>'
-            f'<button class="ghost-btn claude-last-command-copy{command_class}" data-block-modal-copy="#{command_source_id}" type="button">Copier</button>'
-            '</div>'
-            f'<p class="claude-last-command-empty{empty_class}">No Claude Code command recorded for this block.</p>'
-            f'<pre class="claude-last-command-output{command_class}" id="{command_source_id}" data-block-modal-copy-source>{escape(command)}</pre>'
-            '</div>'
-            '</section>'
-        )
-
-    def _render_tab(
-        self,
-        *,
-        tab_id: str,
-        tab_dom_id: str,
-        panel_dom_id: str,
-        title: str,
-        subtitle: str,
-        selected: bool,
-    ) -> str:
-        """Render one modal tab button."""
-
-        return (
-            '<button class="claude-modal-tab" data-claude-modal-tab '
-            f'data-claude-tab-id="{escape(tab_id, quote=True)}" id="{escape(tab_dom_id, quote=True)}" '
-            f'type="button" role="tab" aria-selected="{str(selected).lower()}" '
-            f'aria-controls="{escape(panel_dom_id, quote=True)}" tabindex="{0 if selected else -1}">'
-            f'<span>{escape(title)}</span>'
-            f'<small>{escape(subtitle)}</small>'
-            '</button>'
-        )
-
-    def _ui_last_command(self, payload: dict[str, Any]) -> str:
-        """Return the latest Claude Code command from runtime payload metadata."""
-
-        runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
-        result = runtime.get("result") if isinstance(runtime.get("result"), dict) else {}
-        command = str(result.get("last_claude_command") or "").strip()
-        if command:
-            return command
-        metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
-        command = str(metadata.get("last_claude_command") or "").strip()
-        if command:
-            return command
-        outputs = result.get("outputs") if isinstance(result.get("outputs"), dict) else {}
-        for output in reversed(list(outputs.values())):
-            if not isinstance(output, dict):
-                continue
-            output_metadata = output.get("metadata") if isinstance(output.get("metadata"), dict) else {}
-            command = str(output.get("last_claude_command") or output_metadata.get("last_claude_command") or "").strip()
-            if command:
-                return command
-        return ""
-
-    def _format_command(self, binary: str, prompt: str) -> str:
-        """Return a shell-readable command string for logs and modal display."""
-
-        return shlex.join([binary, "-p", prompt])
-
-    def _error_record(
-        self,
-        *,
-        port_id: int,
-        port_name: str,
-        command: str,
-        stderr: str,
-        exit_code: int,
-        started: float,
-        prompt: str,
-        stdout: str = "",
-    ) -> dict[str, Any]:
-        """Build a consistent failed execution record."""
-
-        return {
-            "port_id": port_id,
-            "port_name": port_name,
-            "command": command,
-            "stdout": stdout,
-            "stderr": stderr,
-            "exit_code": exit_code,
-            "duration": round(time.perf_counter() - started, 3),
-            "prompt_chars": len(prompt),
-        }
-
-    def _dict_port_id(self, port: dict[str, Any], fallback: int) -> int | str:
-        """Return a stable port id for modal field bindings."""
-
-        raw_id = port.get("id")
+    def render_node_card(self, *, node, payload=None):
+        """Show a bounded instruction and settings preview inside the standard shell."""
+        config = self._config(node)
+        port = next(iter(node.get("outputs") or []), {})
+        instruction = " ".join(str(port.get("instruction") or "").split())
+        instruction_key = ""
+        if (config.get("instruction_inputs") or {}).get(str(port.get("id"))):
+            instruction_key = "block.claude_code.card_input_instruction"
+            instruction = self.translate(instruction_key, fallback="Instruction from input")
+        elif not instruction:
+            instruction_key = "block.claude_code.card_empty_instruction"
+            instruction = self.translate(instruction_key, fallback="No instruction")
+        if len(instruction) > 240:
+            instruction = instruction[:239] + "…"
+        model_id = str(config.get("model") or "")
+        model_label = next((item["label"] for item in self.model["model_catalog"] if item["id"] == model_id), model_id)
+        if not model_id:
+            model_label = self.translate("block.claude_code.card_cli_model", fallback="CLI model")
         try:
-            parsed = int(raw_id)
-        except (TypeError, ValueError):
-            return str(raw_id or fallback)
-        return parsed if parsed > 0 else fallback
+            timeout = str(min(int(config["timeout_sec"]), 240))
+        except (TypeError, ValueError, OverflowError):
+            timeout = "—"
+        settings = " · ".join(str(value) for value in (config.get("effort"), f"{timeout} s") if value)
+        rendered = render_node_card_template(block=self, node=node, node_classes=["claude-code-node"], replacements={
+            "title": node.get("title") or self.default_title(), "instruction": instruction,
+            "instruction_key": instruction_key, "configuration": f"{model_label} · {settings}",
+            "configuration_key": "" if model_id else "block.claude_code.card_cli_configuration",
+            "configuration_params": json.dumps({"settings": f" · {settings}"})})
+        # Authored text and model IDs are data, never translation keys.
+        rendered["html"] = rendered["html"].replace(' data-i18n=""', '').replace(' data-i18n-title=""', '')
+        return rendered
 
-    def _safe_dom_id(self, value: str) -> str:
-        """Normalize a value so it can be embedded in modal DOM ids."""
+    def _directory_port_operations(self, node, enabled):
+        """Build idempotent public operations; keep unrelated ports and existing IDs intact."""
+        existing = next((p for p in node.get("inputs", []) if is_working_directory_port(p)), None)
+        if enabled and existing is None:
+            return [{"op": "create_port", "node_id": node["id"], "direction": "input",
+                     "name": "working_directory", "title": "Working directory",
+                     "accepts": ["config/working-directory", "text/plain", "message/*"],
+                     "multiplicity": "many", "required": False, "execution_requirement": "not_required_for_execution"}]
+        if not enabled and existing is not None:
+            return [{"op": "delete_port", "node_id": node["id"], "direction": "input", "port_id": existing["id"], "cascade": True}]
+        return []
 
-        normalized = re.sub(r"[^A-Za-z0-9_-]+", "-", str(value or "").strip())
-        return normalized.strip("-") or "claude"
-
-    def _truncate(self, value: str, max_length: int) -> str:
-        """Return a compact one-line preview for the node card."""
-
-        text = str(value or "").replace("\n", " ").strip()
-        return text if len(text) <= max_length else f"{text[: max_length - 1]}..."
-
-    def _decode_process_text(self, raw_value: Any) -> str:
-        """Decode subprocess timeout stdout/stderr payloads."""
-
-        if isinstance(raw_value, str):
-            return raw_value
-        if raw_value is None:
-            return ""
-        if isinstance(raw_value, bytes):
-            return raw_value.decode("utf-8", "replace")
-        return str(raw_value)
-
-    def _normalize_int(self, raw_value: Any, *, default: int, minimum: int, maximum: int) -> int:
-        """Return a bounded integer config value."""
-
+    def handle_ui_action(self, *, node, action, values, payload=None):
+        """Persist the directory switch immediately; other authored fields still use Apply."""
+        if action == "sync_working_directory_input":
+            if not node.get("id"):
+                return {"error": "missing_node_id"}
+            enabled = boolean(values.get("enabled"))
+            return {"graph_operations": [
+                {"op": "update_node_config", "node_id": node["id"], "config": {"working_directory_input_enabled": enabled}},
+                *self._directory_port_operations(node, enabled)], "rerender_inspector": False}
+        result = super().handle_ui_action(node=node, action=action, values=values, payload=payload)
+        patch = result.get("node_patch") or {}
+        if "config" not in patch:
+            return result
         try:
-            value = int(raw_value)
-        except (TypeError, ValueError):
-            value = default
-        return max(minimum, min(maximum, value))
+            config = self.normalize_config({**self._config(node), **patch["config"]})
+        except ValueError as error:
+            return {"error": str(error)}
+        patch["config"] = config
+        operations = self._directory_port_operations(node, config["working_directory_input_enabled"])
+        if operations:
+            result.update(graph_operations=operations, rerender_inspector=True)
+        return result

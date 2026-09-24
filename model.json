@@ -6,6 +6,41 @@
   ],
   "tested_with_bloxsmith": "1.0.9",
   "title": "Claude Code",
+  "description": "Runs the local Claude Code CLI with per-output instructions, persistent sessions and application-managed MCP references.",
+  "locales": {
+    "en": "locales/en.json",
+    "fr": "locales/fr.json"
+  },
+  "model_catalog": [
+    {
+      "id": "",
+      "label": "CLI default"
+    },
+    {
+      "id": "sonnet",
+      "label": "Sonnet"
+    },
+    {
+      "id": "opus",
+      "label": "Opus"
+    },
+    {
+      "id": "haiku",
+      "label": "Haiku"
+    },
+    {
+      "id": "fable",
+      "label": "Fable"
+    }
+  ],
+  "effort_catalog": [
+    "",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+  ],
   "ports": {
     "inputs": [
       {
@@ -38,17 +73,58 @@
   },
   "config": {
     "claude_binary": "claude",
-    "timeout_sec": 300,
+    "working_directory": "",
+    "working_directory_input_enabled": false,
+    "model": "",
+    "effort": "",
+    "permission_mode": "default",
+    "dangerously_allow_all": false,
+    "use_persistent_session": true,
+    "session_generation": "",
+    "instruction_inputs": {},
+    "mcp_refs": [],
+    "timeout_sec": 240,
     "max_prompt_chars": 250000
+  },
+  "port_capabilities": {
+    "can_add_inputs": true,
+    "can_add_outputs": true,
+    "allow_required_input": true,
+    "default_required": true
   },
   "runtime": {
     "initial_state": "waiting",
     "runtime_executable": true,
     "active_worker": true,
     "centralized_executor": "generic",
-    "centralized_dependency_mode": "all_inputs"
+    "centralized_dependency_mode": "all_inputs",
+    "file_browser": true
   },
   "ui_assets": {
+    "node_card": [
+      {
+        "kind": "css",
+        "path": "assets/css/node_card.css"
+      }
+    ],
+    "inspector_panel": [
+      {
+        "kind": "css",
+        "path": "assets/css/block_modal.css"
+      },
+      {
+        "kind": "js",
+        "path": "assets/js/block_modal.js"
+      },
+      {
+        "kind": "css",
+        "path": "assets/css/properties.css"
+      },
+      {
+        "kind": "js",
+        "path": "assets/js/properties.js"
+      }
+    ],
     "modal": [
       {
         "kind": "css",
@@ -57,6 +133,14 @@
       {
         "kind": "js",
         "path": "assets/js/block_modal.js"
+      },
+      {
+        "kind": "css",
+        "path": "assets/css/properties.css"
+      },
+      {
+        "kind": "js",
+        "path": "assets/js/properties.js"
       }
     ]
   }
